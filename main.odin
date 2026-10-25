@@ -352,20 +352,16 @@ main :: proc() {
 				make_samurai({1000, 0}),
 				make_samurai({1000, 0}),
 				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
-				make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
+				// make_samurai({1000, 0}),
 			},
 			max_at_a_time = 4,
 		},
@@ -380,7 +376,7 @@ main :: proc() {
 					flags = {.No_Physics}
 				},
 			},
-			max_at_a_time = 1,
+			max_at_a_time = 100,
 		},
 	}
 
@@ -394,7 +390,6 @@ main :: proc() {
 	finished_game: bool
 	game_state: Game_State
 	state_reached_at: int
-	prayed_respects: bool
 	for !rl.WindowShouldClose() {
 		message: cstring
 		level := &levels[current_level]
@@ -520,21 +515,23 @@ main :: proc() {
 		}
 
 		////////// Interaction with interactive entities
-		for ie, i in entities {
+		for &ie, i in entities {
 			#partial switch ie.kind {
 			case .Unlock_Big_Knight, .Finish_Game:
 				rect := entity_rect(ie)
-				if rl.CheckCollisionRecs(player_rect, rect) && !prayed_respects {
+				if rl.CheckCollisionRecs(player_rect, rect) {
 					message = "Press F to pay respects"
 
 					if rl.IsKeyPressed(.F) {
 						#partial switch ie.kind {
 						case .Unlock_Big_Knight:
-							prayed_respects = true
-							unlocked_entities |= {.Big_Knight}
+							ie.kind = .Removed
 							level.already_defeated += 1
+							unlocked_entities |= {.Big_Knight}
 							begin_attack(player, .Pray_Respects)
 						case .Finish_Game:
+							ie.kind = .Removed
+							level.already_defeated += 1
 							begin_attack(player, .Pray_Respects)
 							finished_game = true
 							state_reached_at = frame_number
@@ -543,6 +540,12 @@ main :: proc() {
 				}
 			}
 		}
+		if game_state == .Game && finished_game && state_reached_at + 15 < frame_number {
+			game_state = .Ending
+			state_reached_at = frame_number
+		}
+
+		fmt.println(len(entities))
 
 		for &ent, ent_id in entities {
 			if ent.kind == .Removed do continue
@@ -706,7 +709,6 @@ main :: proc() {
 			entities[player].pos.x = -world_end.x
 			if enemy_count == 0 {
 				current_level += 1
-				remove_range(&entities, 2, len(entities))
 			} else {
 				entities[player].pos.x = world_end.x - 10
 			}
@@ -749,7 +751,6 @@ main :: proc() {
 		////////// Remove old particles
 		for i := 0; i < len(particles); {
 			if frame_number > particles[i].started_on + particles[i].lifetime {
-				fmt.println("Removing particle")
 				unordered_remove(&particles, i)
 			} else {
 				i += 1
@@ -763,7 +764,6 @@ main :: proc() {
 				i += 1
 			}
 		}
-		fmt.println(len(entities))
 
 		////////// Do rendering
 		rl.BeginDrawing()
