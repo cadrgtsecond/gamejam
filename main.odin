@@ -545,8 +545,6 @@ main :: proc() {
 			state_reached_at = frame_number
 		}
 
-		fmt.println(len(entities))
-
 		for &ent, ent_id in entities {
 			if ent.kind == .Removed do continue
 
