@@ -219,9 +219,57 @@ make_samurai :: proc(pos: [2]f32) -> Entity{
 	}
 }
 
+Game_State :: enum {
+	Starting1,
+	Starting2,
+	Game,
+	Ending,
+}
+
+STARTING_MESSAGE := """
+Far from his ancestral halls, a knight ventured
+into distant lands,
+
+seeking to prove his worth and earn the honours
+befitting his name.
+
+Through trials and countless battles,
+he pursued the glory that would complete his banner,
+
+and the day he might return before his sovereign.
+"""
+
+STARTING_MESSAGE2 := """
+Yet, whilst he wandered, his homeland fell to ruin.
+
+Its walls were broken, its banners silenced,
+and its people scattered to the winds.
+
+Unbeknownst to him, the kingdom he had sworn
+to serve was no longer as he had left it.
+
+And at last, with banner in hand, the knight
+returned home.
+"""
+
+ENDING_MESSAGE := """
+The throne stands empty.
+
+The kingdom lies in ashes.
+
+Those who once stood in its defense are gone.
+
+And before the throne of his fallen king,
+
+the knight kneels.
+
+His banner bears no glory. Only remembrance.
+"""
+
 ////////// Main function
 main :: proc() {
 	unlocked_entities := bit_set[Entity_Kind]{.Knight}
+	unlocked_entities |= {.Big_Knight}
 
 	rl.InitWindow(1200, 800, "Gamejam demo")
 	defer rl.CloseWindow()
@@ -262,7 +310,7 @@ main :: proc() {
 		}
 	}
 
-	current_level := 4
+	current_level := 0
 	levels := []Level {
 		{
 			background = load_texture("./Scenes/Forest.png"),
@@ -346,6 +394,8 @@ main :: proc() {
 
 	trigger_slam: bool
 	finished_game: bool
+	game_state: Game_State
+	state_reached_at: int
 	prayed_respects: bool
 	for !rl.WindowShouldClose() {
 		message: cstring
@@ -363,16 +413,17 @@ main :: proc() {
 		frame_number = int(rl.GetTime() / 0.1)
 
 		player_rect := entity_rect(entities[player])
-
 		enemy_count := len(entities) - 2
 		living_enemy_count := enemy_count - level.already_defeated
-		if frame_number % 10 == 0 {
-			if enemy_count - level.already_defeated < level.max_at_a_time {
-				next_enemy_index := enemy_count
-				if next_enemy_index < len(level.enemies) {
-					next_enemy := level.enemies[next_enemy_index]
-					next_enemy.pos.x += rand.float32_range(-100, 100)
-					append(&entities, next_enemy)
+		if game_state == .Game {
+			if frame_number % 10 == 0 {
+				if enemy_count - level.already_defeated < level.max_at_a_time {
+					next_enemy_index := enemy_count
+					if next_enemy_index < len(level.enemies) {
+						next_enemy := level.enemies[next_enemy_index]
+						next_enemy.pos.x += rand.float32_range(-100, 100)
+						append(&entities, next_enemy)
+					}
 				}
 			}
 		}
@@ -489,6 +540,7 @@ main :: proc() {
 						case .Finish_Game:
 							begin_attack(player, .Pray_Respects)
 							finished_game = true
+							state_reached_at = frame_number
 						}
 					}
 				}
@@ -585,6 +637,7 @@ main :: proc() {
 						} else {
 							player.last_got_hit_on = frame_number
 							player.flags |= {.Got_Hit}
+							fmt.println(player.health)
 							player.health -= ent.attack_power
 							if player.health <= 0 {
 								fmt.panicf("You lost!")
@@ -709,115 +762,146 @@ main :: proc() {
 
 		////////// Do rendering
 		rl.BeginDrawing()
-		ui_topleft := [2]f32{0, window_size.y * 0.25}
+		switch game_state {
+		case .Starting1:
+			char_count := (frame_number - state_reached_at) * 2
+			if char_count < len(STARTING_MESSAGE) {
+				rl.ClearBackground(rl.BLACK)
 
-		////////// Draw background
-		rl.ClearBackground(rl.BLACK)
-
-		rl.DrawTexturePro(level.background, {0, 0, f32(level.background.width), f32(level.background.height)},
-		                  		    {**ui_topleft,window_size.x, window_size.y * 0.5}, {}, 0, rl.WHITE)
-
-		rl.BeginMode2D(camera)
-
-		for plat in platforms {
-			rl.DrawLineEx({-plat.width / 2, plat.y + plat.thickness / 2}, {plat.width / 2, plat.y + plat.thickness / 2}, plat.thickness, {0, 0, 0, 0})
-		}
-
-		////////// Draw entities
-		for ent in entities {
-			if .Null_Entity in ent.flags {
-				continue
+				rl.DrawText(strings.clone_to_cstring(STARTING_MESSAGE[:char_count]), 20, 20, 40, rl.WHITE)
+			} else if char_count > len(STARTING_MESSAGE) + 20 {
+				game_state = .Starting2
+				state_reached_at = frame_number
 			}
-			switch ent.kind {
-			case .Rectangle:
-				rl.DrawRectangle(**cast([2]i32)(ent.pos - ent.size/2), **cast([2]i32)ent.size, rl.RED)
-			case .Circle:
-				rl.DrawCircleV(ent.pos, ent.size.x/2, rl.GREEN)
-			case .Test_Samurai:
-				#partial switch ent.current_attack {
-				case .None:
-					draw_texture(TEST_SAMURAI_IDLE, (frame_number - ent.animation_start_number) % TEST_SAMURAI_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Basic:
-					draw_texture(TEST_SAMURAI_ATTACK, (frame_number - ent.animation_start_number) % TEST_SAMURAI_ATTACK.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Walk, .Dash:
-					draw_texture(TEST_SAMURAI_WALK, (frame_number - ent.animation_start_number) % TEST_SAMURAI_WALK.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				}
-			case .Knight:
-				#partial switch ent.current_attack {
-				case .None:
-					draw_texture(KNIGHT_IDLE, (frame_number - ent.animation_start_number) % KNIGHT_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Basic:
-					draw_texture(KNIGHT_ATTACK_BASIC, (frame_number - ent.animation_start_number) % KNIGHT_ATTACK_BASIC.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Defend:
-					draw_texture(KNIGHT_DEFEND, (frame_number - ent.animation_start_number) % KNIGHT_DEFEND.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Walk, .Dash:
-					draw_texture(KNIGHT_RUN, (frame_number - ent.animation_start_number) % KNIGHT_RUN.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Pray_Respects:
-					draw_texture(KNIGHT_PRAY_RESPECTS, min(1, frame_number - ent.animation_start_number) % KNIGHT_PRAY_RESPECTS.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				}
-			case .Archer:
-				#partial switch ent.current_attack {
-				case .None:
-					draw_texture(ARCHER_IDLE, (frame_number - ent.animation_start_number) % ARCHER_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Basic:
-					draw_texture(ARCHER_ATTACK_BASIC, (frame_number - ent.animation_start_number) % ARCHER_ATTACK_BASIC.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Walk, .Dash:
-					draw_texture(ARCHER_RUN, (frame_number - ent.animation_start_number) % ARCHER_RUN.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				}
-			case .Samurai:
-				tint := rl.WHITE
-				time_since_hit := frame_number - ent.last_got_hit_on
-				if .Got_Hit in ent.flags && 0 < time_since_hit && time_since_hit < 4 {
-					tint = rl.RED
-				}
-				if ent.health < 0 {
-					tint = rl.GREEN
-				}
-				#partial switch ent.current_attack {
-				case .None:
-					draw_texture(SAMURAI_IDLE, (frame_number - ent.animation_start_number) % SAMURAI_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction, tint)
-				case .Basic:
-					draw_texture(SAMURAI_ATTACK_BASIC, (frame_number - ent.animation_start_number) % SAMURAI_ATTACK_BASIC.divisions, {**ent.pos, **ent.size}, ent.facing_direction, tint)
-				case .Dead:
-					draw_texture(SAMURAI_DEAD, (frame_number - ent.animation_start_number) % SAMURAI_DEAD.divisions, {**ent.pos, **ent.size}, ent.facing_direction, tint)
-				case .Walk, .Dash:
-				 	draw_texture(SAMURAI_RUN, (frame_number - ent.animation_start_number) % SAMURAI_RUN.divisions, {**ent.pos, **ent.size}, ent.facing_direction, tint)
-				}
-			case .Big_Knight:
-				#partial switch ent.current_attack {
-				case .None:
-					draw_texture(BIG_KNIGHT_IDLE, (frame_number - ent.animation_start_number) % BIG_KNIGHT_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Basic:
-				 	draw_texture(BIG_KNIGHT_ATTACK, (frame_number - ent.animation_start_number) % BIG_KNIGHT_ATTACK.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				case .Walk, .Dash, .Slam:
-				 	draw_texture(BIG_KNIGHT_WALK, (frame_number - ent.animation_start_number) % BIG_KNIGHT_WALK.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
-				}
-			case .Unlock_Big_Knight:
-			case .Finish_Game:
-			case .Removed:
+		case .Starting2:
+			char_count := (frame_number - state_reached_at) * 2
+			if char_count < len(STARTING_MESSAGE2) {
+				rl.ClearBackground(rl.BLACK)
+
+				rl.DrawText(strings.clone_to_cstring(STARTING_MESSAGE2[:char_count]), 20, 20, 50, rl.WHITE)
+			} else if char_count > len(STARTING_MESSAGE2) + 20 {
+				game_state = .Game
+				state_reached_at = frame_number
 			}
+		case .Ending:
+			char_count := (frame_number - state_reached_at) * 2
+			if char_count < len(ENDING_MESSAGE) {
+				rl.ClearBackground(rl.BLACK)
+
+				rl.DrawText(strings.clone_to_cstring(ENDING_MESSAGE[:char_count]), 20, 20, 50, rl.WHITE)
+			} else if char_count > len(ENDING_MESSAGE) + 20 {
+				return
+			}
+		case .Game:
+			ui_topleft := [2]f32{0, window_size.y * 0.25}
+
+			////////// Draw background
+			rl.ClearBackground(rl.BLACK)
+
+			rl.DrawTexturePro(level.background, {0, 0, f32(level.background.width), f32(level.background.height)},
+			                  		    {**ui_topleft,window_size.x, window_size.y * 0.5}, {}, 0, rl.WHITE)
+
+			rl.BeginMode2D(camera)
+
+			for plat in platforms {
+				rl.DrawLineEx({-plat.width / 2, plat.y + plat.thickness / 2}, {plat.width / 2, plat.y + plat.thickness / 2}, plat.thickness, {0, 0, 0, 0})
+			}
+
+			////////// Draw entities
+			for ent in entities {
+				if .Null_Entity in ent.flags {
+					continue
+				}
+				switch ent.kind {
+				case .Rectangle:
+					rl.DrawRectangle(**cast([2]i32)(ent.pos - ent.size/2), **cast([2]i32)ent.size, rl.RED)
+				case .Circle:
+					rl.DrawCircleV(ent.pos, ent.size.x/2, rl.GREEN)
+				case .Test_Samurai:
+					#partial switch ent.current_attack {
+					case .None:
+						draw_texture(TEST_SAMURAI_IDLE, (frame_number - ent.animation_start_number) % TEST_SAMURAI_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Basic:
+						draw_texture(TEST_SAMURAI_ATTACK, (frame_number - ent.animation_start_number) % TEST_SAMURAI_ATTACK.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Walk, .Dash:
+						draw_texture(TEST_SAMURAI_WALK, (frame_number - ent.animation_start_number) % TEST_SAMURAI_WALK.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					}
+				case .Knight:
+					#partial switch ent.current_attack {
+					case .None:
+						draw_texture(KNIGHT_IDLE, (frame_number - ent.animation_start_number) % KNIGHT_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Basic:
+						draw_texture(KNIGHT_ATTACK_BASIC, (frame_number - ent.animation_start_number) % KNIGHT_ATTACK_BASIC.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Defend:
+						draw_texture(KNIGHT_DEFEND, (frame_number - ent.animation_start_number) % KNIGHT_DEFEND.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Walk, .Dash:
+						draw_texture(KNIGHT_RUN, (frame_number - ent.animation_start_number) % KNIGHT_RUN.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Pray_Respects:
+						draw_texture(KNIGHT_PRAY_RESPECTS, min(1, frame_number - ent.animation_start_number) % KNIGHT_PRAY_RESPECTS.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					}
+				case .Archer:
+					#partial switch ent.current_attack {
+					case .None:
+						draw_texture(ARCHER_IDLE, (frame_number - ent.animation_start_number) % ARCHER_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Basic:
+						draw_texture(ARCHER_ATTACK_BASIC, (frame_number - ent.animation_start_number) % ARCHER_ATTACK_BASIC.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Walk, .Dash:
+						draw_texture(ARCHER_RUN, (frame_number - ent.animation_start_number) % ARCHER_RUN.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					}
+				case .Samurai:
+					tint := rl.WHITE
+					time_since_hit := frame_number - ent.last_got_hit_on
+					if .Got_Hit in ent.flags && 0 < time_since_hit && time_since_hit < 4 {
+						tint = rl.RED
+					}
+					if ent.health < 0 {
+						tint = rl.GREEN
+					}
+					#partial switch ent.current_attack {
+					case .None:
+						draw_texture(SAMURAI_IDLE, (frame_number - ent.animation_start_number) % SAMURAI_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction, tint)
+					case .Basic:
+						draw_texture(SAMURAI_ATTACK_BASIC, (frame_number - ent.animation_start_number) % SAMURAI_ATTACK_BASIC.divisions, {**ent.pos, **ent.size}, ent.facing_direction, tint)
+					case .Dead:
+						draw_texture(SAMURAI_DEAD, (frame_number - ent.animation_start_number) % SAMURAI_DEAD.divisions, {**ent.pos, **ent.size}, ent.facing_direction, tint)
+					case .Walk, .Dash:
+					 	draw_texture(SAMURAI_RUN, (frame_number - ent.animation_start_number) % SAMURAI_RUN.divisions, {**ent.pos, **ent.size}, ent.facing_direction, tint)
+					}
+				case .Big_Knight:
+					#partial switch ent.current_attack {
+					case .None:
+						draw_texture(BIG_KNIGHT_IDLE, (frame_number - ent.animation_start_number) % BIG_KNIGHT_IDLE.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Basic:
+					 	draw_texture(BIG_KNIGHT_ATTACK, (frame_number - ent.animation_start_number) % BIG_KNIGHT_ATTACK.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					case .Walk, .Dash, .Slam:
+					 	draw_texture(BIG_KNIGHT_WALK, (frame_number - ent.animation_start_number) % BIG_KNIGHT_WALK.divisions, {**ent.pos, **ent.size}, ent.facing_direction)
+					}
+				case .Unlock_Big_Knight:
+				case .Finish_Game:
+				case .Removed:
+				}
+			}
+
+			////////// Draw particles
+			for part in particles {
+				draw_texture(part.texture, (frame_number - part.started_on) % part.texture.divisions, {**part.pos, **part.size})
+			}
+
+
+			rl.EndMode2D()
+
+			////////// Draw UI
+			BAR_HEIGHT :: 30
+			BAR_LENGTH :: 200
+			BAR_PADDING :: 2
+
+			if message != "" {
+				rl.DrawText(message, i32(window_size.x / 2 * 0.7) , i32(window_size.y / 2 * 1.2), 25, rl.WHITE)
+			}
+
+			rl.DrawRectangleV(ui_topleft + {10, 10}, {BAR_LENGTH, BAR_HEIGHT}, rl.BLACK)
+			rl.DrawRectangleV(ui_topleft + {10, 10} + BAR_PADDING, {BAR_LENGTH * f32(entities[player].health) / 100, BAR_HEIGHT} - BAR_PADDING * 2, rl.GREEN)
 		}
-
-		////////// Draw particles
-		for part in particles {
-			draw_texture(part.texture, (frame_number - part.started_on) % part.texture.divisions, {**part.pos, **part.size})
-		}
-
-
-		rl.EndMode2D()
-
-		////////// Draw UI
-		BAR_HEIGHT :: 30
-		BAR_LENGTH :: 200
-		BAR_PADDING :: 2
-
-
-		if message != "" {
-			rl.DrawText(message, i32(window_size.x / 2 * 0.7) , i32(window_size.y / 2 * 1.2), 25, rl.WHITE)
-		}
-
-		rl.DrawRectangleV(ui_topleft + {10, 10}, {BAR_LENGTH, BAR_HEIGHT}, rl.BLACK)
-		rl.DrawRectangleV(ui_topleft + {10, 10} + BAR_PADDING, {BAR_LENGTH * f32(entities[player].health) / 100, BAR_HEIGHT} - BAR_PADDING * 2, rl.GREEN)
 
 		rl.EndDrawing()
 	}
