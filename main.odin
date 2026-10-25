@@ -281,8 +281,6 @@ main :: proc() {
 
 	window_size := [2]f32{f32(rl.GetScreenWidth()), f32(rl.GetScreenHeight())}
 
-	append(&entities, {flags={.Null_Entity}})
-
 	player := len(entities)
 	append(&entities, {
 		kind = .Knight,
@@ -413,12 +411,11 @@ main :: proc() {
 		frame_number = int(rl.GetTime() / 0.1)
 
 		player_rect := entity_rect(entities[player])
-		enemy_count := len(entities) - 2
-		living_enemy_count := enemy_count - level.already_defeated
+		enemy_count := len(entities) - 1
 		if game_state == .Game {
 			if frame_number % 10 == 0 {
-				if enemy_count - level.already_defeated < level.max_at_a_time {
-					next_enemy_index := enemy_count
+				if enemy_count < level.max_at_a_time {
+					next_enemy_index := enemy_count + level.already_defeated
 					if next_enemy_index < len(level.enemies) {
 						next_enemy := level.enemies[next_enemy_index]
 						next_enemy.pos.x += rand.float32_range(-100, 100)
@@ -637,7 +634,6 @@ main :: proc() {
 						} else {
 							player.last_got_hit_on = frame_number
 							player.flags |= {.Got_Hit}
-							fmt.println(player.health)
 							player.health -= ent.attack_power
 							if player.health <= 0 {
 								fmt.panicf("You lost!")
@@ -708,7 +704,7 @@ main :: proc() {
 		world_end := rl.GetScreenToWorld2D(window_size, camera)
 		if entities[player].pos.x > world_end.x {
 			entities[player].pos.x = -world_end.x
-			if living_enemy_count == 0 {
+			if enemy_count == 0 {
 				current_level += 1
 				remove_range(&entities, 2, len(entities))
 			} else {
@@ -736,8 +732,9 @@ main :: proc() {
 				if ent.current_attack == .Dead {
 					ent.kind = .Removed
 					level.already_defeated += 1
+				} else {
+					ent.current_attack = .None
 				}
-				ent.current_attack = .None
 			}
 			if ent.current_attack == .Dash {
 				switch ent.facing_direction {
@@ -750,8 +747,7 @@ main :: proc() {
 		}
 
 		////////// Remove old particles
-		i: int
-		for i < len(particles) {
+		for i := 0; i < len(particles); {
 			if frame_number > particles[i].started_on + particles[i].lifetime {
 				fmt.println("Removing particle")
 				unordered_remove(&particles, i)
@@ -759,6 +755,15 @@ main :: proc() {
 				i += 1
 			}
 		}
+		for i := 0; i < len(entities); {
+			if entities[i].kind == .Removed {
+				fmt.println("Removing entity", i)
+				unordered_remove(&entities, i)
+			} else {
+				i += 1
+			}
+		}
+		fmt.println(len(entities))
 
 		////////// Do rendering
 		rl.BeginDrawing()
